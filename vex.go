@@ -4,10 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"unicode"
 
 	"golang.org/x/term"
 )
+
+const ctrlKey = byte(0b00011111)
 
 func main() {
 	previousState, err := term.MakeRaw(0)
@@ -24,19 +25,37 @@ func exitWithMessage(message string) {
 	os.Exit(1)
 }
 
+func editorReadKey(reader bufio.Reader) rune {
+	char, _, err := reader.ReadRune()
+	if err != nil {
+		exitWithMessage("Couldn't read inserted character")
+	}
+	return char
+}
+
+func editorDrawRows() {
+	for i := 0; i < 24; i++ {
+		fmt.Print("~\r\n")
+	}
+
+}
+
+func editorRefreshScreen() {
+	fmt.Print("\x1b[2J")
+	fmt.Print("\x1b[H")
+	editorDrawRows()
+	fmt.Print("\x1b[H")
+}
+
 func enterReaderLoop() {
-	var char rune
-	var err error
 	reader := bufio.NewReader(os.Stdin)
-	for string(char) != "q" {
-		char, _, err = reader.ReadRune()
-		if err != nil {
-			exitWithMessage("Couldn't read inserted character")
-		}
-		if unicode.IsControl(char) {
-			fmt.Printf("%v\r\n", char)
-		} else {
-			fmt.Printf("%c\r\n", char)
+	for {
+		editorRefreshScreen()
+		switch char := editorReadKey(*reader); char {
+		case rune(ctrlKey & byte('q')):
+			fmt.Print("\x1b[2J")
+			fmt.Print("\x1b[H")
+			os.Exit(0)
 		}
 	}
 }
