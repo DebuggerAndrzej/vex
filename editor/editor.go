@@ -26,10 +26,14 @@ type CursorPosition struct {
 }
 
 type Editor struct {
-	Rows     int
-	Columns  int
-	Contents strings.Builder
-	Cursor   CursorPosition
+	TerminalRowCount    int
+	TerminalColumnCount int
+	Contents            strings.Builder
+	Cursor              CursorPosition
+	FileLines           []string
+	NumberOfFileRows    int
+	YOffset             int
+	XOffset             int
 }
 
 func (editor *Editor) SetWindowSize() {
@@ -38,7 +42,7 @@ func (editor *Editor) SetWindowSize() {
 		ExitWithMessage("Couldn't get terminal size")
 	}
 
-	editor.Columns, editor.Rows = columns, rows
+	editor.TerminalColumnCount, editor.TerminalRowCount = columns, rows
 }
 
 func (editor *Editor) EnterReaderLoop() {
@@ -51,67 +55,129 @@ func (editor *Editor) EnterReaderLoop() {
 			fmt.Print(placeCursorAtBegining)
 			os.Exit(0)
 		case PAGE_UP:
-			for i := 0; i < editor.Rows; i++ {
+			for i := 0; i < editor.TerminalRowCount; i++ {
 				editor.moveCursor(ARROW_UP)
 			}
 		case PAGE_DOWN:
-			for i := 0; i < editor.Rows; i++ {
+			for i := 0; i < editor.TerminalRowCount; i++ {
 				editor.moveCursor(ARROW_DOWN)
 			}
 		case HOME_KEY:
 			editor.Cursor.X = 0
 		case END_KEY:
-			editor.Cursor.X = editor.Columns - 1
+			editor.Cursor.X = editor.TerminalColumnCount - 1
 		case ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT:
 			editor.moveCursor(char)
 		}
 	}
 }
 
-func (editor *Editor) editorDrawRows() {
-	for y := 0; y < editor.Rows; y++ {
-		if y == editor.Rows/3 {
-			editorTitleMsg := "Vex editor - pre alpha"
-			pading := editor.Columns / 2
-			editor.Contents.WriteString(fmt.Sprintf("%*s", pading, editorTitleMsg))
+func (editor *Editor) drawRows() {
+	for y := 0; y < editor.TerminalRowCount; y++ {
+		rowNumberAfterOffset := y + editor.YOffset
+		if rowNumberAfterOffset >= editor.NumberOfFileRows {
+			if editor.NumberOfFileRows == 0 && y == editor.TerminalRowCount/3 {
+				editorTitleMsg := "Vex editor - pre alpha"
+				pading := editor.TerminalColumnCount / 2
+				editor.Contents.WriteString(fmt.Sprintf("%*s", pading, editorTitleMsg))
+			} else {
+				editor.Contents.WriteString("~")
+			}
+
 		} else {
-			editor.Contents.WriteString("~")
+			currentLine := editor.FileLines[rowNumberAfterOffset]
+			if len(currentLine)-editor.XOffset > 0 {
+				editor.Contents.WriteString(currentLine[editor.XOffset:min(editor.TerminalColumnCount+editor.XOffset, len(currentLine))])
+			}
 		}
+
 		editor.Contents.WriteString(eraseRestOfTheLine)
-		if y < editor.Rows-1 {
+		if y < editor.TerminalRowCount-1 {
 			editor.Contents.WriteString("\r\n")
 		}
 	}
 }
 
 func (editor *Editor) refreshScreen() {
+	editor.updateOffsets()
 	editor.Contents.WriteString(hideCursor)
 	editor.Contents.WriteString(placeCursorAtBegining)
-	editor.editorDrawRows()
-	editor.Contents.WriteString(fmt.Sprintf("\x1b[%d;%dH", editor.Cursor.Y, editor.Cursor.X))
+	editor.drawRows()
+	editor.Contents.WriteString(
+		fmt.Sprintf("\x1b[%d;%dH", editor.Cursor.Y-editor.YOffset+1, editor.Cursor.X-editor.XOffset+1),
+	)
 	editor.Contents.WriteString(showCursor)
 	fmt.Print(editor.Contents.String())
 	editor.Contents.Reset()
 }
 
 func (editor *Editor) moveCursor(char rune) {
+	var rowUnderCursorLen int
+
+	if editor.Cursor.Y < editor.NumberOfFileRows {
+		rowUnderCursorLen = len(editor.FileLines[editor.Cursor.Y])
+	}
+
 	switch char {
 	case ARROW_UP:
 		if editor.Cursor.Y != 0 {
 			editor.Cursor.Y--
 		}
 	case ARROW_DOWN:
-		if editor.Cursor.Y != editor.Rows-1 {
+		if editor.Cursor.Y < editor.NumberOfFileRows {
 			editor.Cursor.Y++
 		}
 	case ARROW_RIGHT:
-		if editor.Cursor.X != editor.Columns-1 {
+		if editor.Cursor.X < rowUnderCursorLen {
 			editor.Cursor.X++
+		} else if editor.Cursor.X == rowUnderCursorLen && editor.Cursor.Y < editor.NumberOfFileRows {
+			editor.Cursor.Y++
+			editor.Cursor.X = 0
 		}
 	case ARROW_LEFT:
 		if editor.Cursor.X != 0 {
 			editor.Cursor.X--
+		} else if editor.Cursor.Y > 0 {
+			editor.Cursor.Y--
+			editor.Cursor.X = len(editor.FileLines[editor.Cursor.Y])
 		}
+	}
+	rowUnderCursorLen = 0
+
+	if editor.Cursor.Y < editor.NumberOfFileRows {
+		rowUnderCursorLen = len(editor.FileLines[editor.Cursor.Y])
+	}
+	if editor.Cursor.X > rowUnderCursorLen {
+		editor.Cursor.X = rowUnderCursorLen
+	}
+}
+
+func (editor *Editor) OpenFile(filePath string) {
+	fileData, err := os.Open(filePath)
+	if err != nil {
+		ExitWithMessage("Couldn't load file")
+	}
+
+	fileScanner := bufio.NewScanner(fileData)
+	for fileScanner.Scan() {
+		editor.FileLines = append(editor.FileLines, fileScanner.Text())
+		editor.NumberOfFileRows++
+	}
+}
+
+func (editor *Editor) updateOffsets() {
+	if editor.Cursor.Y < editor.YOffset {
+		editor.YOffset = editor.Cursor.Y
+	}
+
+	if editor.Cursor.Y >= editor.YOffset+editor.TerminalRowCount {
+		editor.YOffset = editor.Cursor.Y - editor.TerminalRowCount + 1
+	}
+	if editor.Cursor.X < editor.XOffset {
+		editor.XOffset = editor.Cursor.X
+	}
+	if editor.Cursor.X >= editor.XOffset+editor.TerminalColumnCount {
+		editor.XOffset = editor.Cursor.X - editor.TerminalColumnCount + 1
 	}
 }
 
