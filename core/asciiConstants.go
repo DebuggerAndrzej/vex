@@ -1,4 +1,4 @@
-package editor
+package core
 
 const ctrlKey = byte(0b00011111)
 
