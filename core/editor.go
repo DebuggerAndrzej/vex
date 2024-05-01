@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,13 +31,14 @@ type StatusMessage struct {
 }
 
 type Editor struct {
-	contents      strings.Builder
-	terminalSize  TerminalSize
-	cursor        CursorPosition
-	offset        Offset
-	fileLines     []string
-	fileName      string
-	statusMessage StatusMessage
+	contents        strings.Builder
+	terminalSize    TerminalSize
+	cursor          CursorPosition
+	offset          Offset
+	fileLines       []string
+	fileName        string
+	statusMessage   StatusMessage
+	hasModifiedFile bool
 }
 
 func (editor *Editor) SetWindowSize() {
@@ -62,6 +64,16 @@ func (editor *Editor) OpenFile(filePath string) {
 	}
 }
 
+func (editor *Editor) SaveFile() {
+	fileData := strings.Join(editor.fileLines, "\n")
+	err := os.WriteFile(editor.fileName, []byte(fileData), 0644)
+	if err != nil {
+		ExitWithMessage(fmt.Sprintf("Couldn't save file: %s", editor.fileName))
+	}
+	editor.SetStatusMessage("Saved file " + editor.fileName)
+	editor.hasModifiedFile = false
+}
+
 func (editor *Editor) SetStatusMessage(message string) {
 	editor.statusMessage = StatusMessage{Message: message, Timestamp: time.Now()}
 }
@@ -71,6 +83,8 @@ func (editor *Editor) EnterReaderLoop() {
 	for {
 		editor.refreshScreen()
 		switch char := readKey(*reader); char {
+		case '\r':
+			editor.insertNewLine()
 		case rune(ctrlKey & byte('q')):
 			fmt.Print(clearEntireScreen)
 			fmt.Print(placeCursorAtBegining)
@@ -91,8 +105,23 @@ func (editor *Editor) EnterReaderLoop() {
 			if editor.cursor.Y < len(editor.fileLines) {
 				editor.cursor.X = len(editor.fileLines[editor.cursor.Y])
 			}
+		case BACKSPACE:
+			editor.deleteChar()
+		case rune(ctrlKey & byte('s')):
+			editor.SaveFile()
+		case rune(ctrlKey & byte('h')):
+			continue
+		case DEL_KEY:
+			editor.moveCursor(ARROW_RIGHT)
+			editor.deleteChar()
 		case ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT:
 			editor.moveCursor(char)
+		case rune(ctrlKey & byte('l')):
+			continue
+		case '\x1b':
+			continue
+		default:
+			editor.insertChar(char)
 		}
 	}
 }
@@ -192,8 +221,53 @@ func (editor *Editor) updateOffsets() {
 	}
 }
 
+func (editor *Editor) insertChar(char rune) {
+	if editor.cursor.Y == len(editor.fileLines) {
+		editor.fileLines = append(editor.fileLines, "")
+	}
+	line := &editor.fileLines[editor.cursor.Y]
+	*line = (*line)[:editor.cursor.X] + string(char) + (*line)[editor.cursor.X:]
+	editor.cursor.X++
+	editor.hasModifiedFile = true
+}
+
+func (editor *Editor) deleteChar() {
+	if editor.cursor.Y == len(editor.fileLines) {
+		return
+	}
+	if editor.cursor.Y == 0 && editor.cursor.X == 0 {
+		return
+	}
+	if editor.cursor.X > 0 {
+		line := &editor.fileLines[editor.cursor.Y]
+		*line = (*line)[:editor.cursor.X-1] + (*line)[editor.cursor.X:]
+		editor.hasModifiedFile = true
+		editor.cursor.X--
+	} else {
+		editor.cursor.X = len(editor.fileLines[editor.cursor.Y-1])
+		editor.fileLines[editor.cursor.Y-1] += editor.fileLines[editor.cursor.Y]
+		editor.fileLines = slices.Delete(editor.fileLines, editor.cursor.Y, editor.cursor.Y+1)
+		editor.cursor.Y--
+	}
+}
+func (editor *Editor) insertNewLine() {
+	if editor.cursor.X == 0 {
+		editor.fileLines = slices.Insert(editor.fileLines, editor.cursor.Y, "")
+	} else {
+		slicedLine := editor.fileLines[editor.cursor.Y][editor.cursor.X:]
+		editor.fileLines = slices.Insert(editor.fileLines, editor.cursor.Y+1, slicedLine)
+		editor.fileLines[editor.cursor.Y] = editor.fileLines[editor.cursor.Y][:editor.cursor.X]
+		editor.cursor.X = 0
+	}
+	editor.cursor.Y++
+	editor.hasModifiedFile = true
+}
 func (editor *Editor) drawStatusBar() {
 	fileInfo := fmt.Sprintf("%s - %d", editor.fileName[0:min(len(editor.fileName), 20)], len(editor.fileLines))
+
+	if editor.hasModifiedFile {
+		fileInfo += " [+]"
+	}
 	cursorInfo := fmt.Sprintf("%d:%d", editor.cursor.Y+1, editor.cursor.X)
 	editor.contents.WriteString(
 		fmt.Sprintf(

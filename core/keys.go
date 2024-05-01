@@ -1,7 +1,8 @@
 package core
 
 const (
-	ARROW_UP = 1000 + iota
+	BACKSPACE = 127
+	ARROW_UP  = 1000 + iota
 	ARROW_DOWN
 	ARROW_LEFT
 	ARROW_RIGHT
