@@ -19,6 +19,6 @@ func main() {
 	editor := core.Editor{}
 	editor.SetWindowSize()
 	editor.OpenFile(flag.Arg(0))
-	editor.SetStatusMessage("HELP: Ctrl-Q = quit")
+	editor.SetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit")
 	editor.EnterReaderLoop()
 }
