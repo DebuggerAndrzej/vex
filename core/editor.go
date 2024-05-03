@@ -49,6 +49,7 @@ func (editor *Editor) SetWindowSize() {
 
 	editor.terminalSize = TerminalSize{Rows: rows - 2, Columns: columns}
 }
+
 func (editor *Editor) OpenFile(filePath string) {
 	fileData, err := os.Open(filePath)
 	if err != nil {
@@ -83,7 +84,7 @@ func (editor *Editor) EnterReaderLoop() {
 	for {
 		editor.refreshScreen()
 		switch char := readKey(*reader); char {
-		case '\r':
+		case enter:
 			editor.insertNewLine()
 		case rune(ctrlKey & byte('q')):
 			fmt.Print(clearEntireScreen)
@@ -118,7 +119,7 @@ func (editor *Editor) EnterReaderLoop() {
 			editor.moveCursor(char)
 		case rune(ctrlKey & byte('l')):
 			continue
-		case '\x1b':
+		case ansiEscape:
 			continue
 		default:
 			editor.insertChar(char)
@@ -167,7 +168,6 @@ func (editor *Editor) drawRows() {
 
 func (editor *Editor) moveCursor(char rune) {
 	var rowUnderCursorLen int
-
 	if editor.cursor.Y < len(editor.fileLines) {
 		rowUnderCursorLen = len(editor.fileLines[editor.cursor.Y])
 	}
@@ -196,8 +196,8 @@ func (editor *Editor) moveCursor(char rune) {
 			editor.cursor.X = len(editor.fileLines[editor.cursor.Y])
 		}
 	}
-	rowUnderCursorLen = 0
 
+	rowUnderCursorLen = 0
 	if editor.cursor.Y < len(editor.fileLines) {
 		rowUnderCursorLen = len(editor.fileLines[editor.cursor.Y])
 	}
@@ -250,6 +250,7 @@ func (editor *Editor) deleteChar() {
 		editor.cursor.Y--
 	}
 }
+
 func (editor *Editor) insertNewLine() {
 	if editor.cursor.X == 0 {
 		editor.fileLines = slices.Insert(editor.fileLines, editor.cursor.Y, "")
@@ -262,6 +263,7 @@ func (editor *Editor) insertNewLine() {
 	editor.cursor.Y++
 	editor.hasModifiedFile = true
 }
+
 func (editor *Editor) drawStatusBar() {
 	fileInfo := fmt.Sprintf("%s - %d", editor.fileName[0:min(len(editor.fileName), 20)], len(editor.fileLines))
 
