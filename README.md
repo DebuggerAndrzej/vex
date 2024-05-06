@@ -3,4 +3,14 @@
 </div>
 <h1 align="center">Vex</h1>
 
-Vex will be an attemp to write simple terminal text editor.
+Very simple and basic text editor written in go using ascii escape sequences to manipulate terminal output.
+
+# Installation
+```
+ go install github.com/DebuggerAndrzej/vex@latest
+```
+Requirements:
+- go 1.22 or newer
+
+> [!TIP]
+> default installation path for go is ~/go/bin so in order to have vex command available this path has to be added to shell user paths.
